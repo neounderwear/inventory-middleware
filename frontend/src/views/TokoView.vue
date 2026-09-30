@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || 'https://inventory.underwear.my.id'
 
 const fileToko = ref<File | null>(null)
 const entitasToko = ref<string>('JAGOAN')
