@@ -33,7 +33,7 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
   const fetchConfirmedPOs = async () => {
     isLoading.value = true;
     try {
-      const res = await fetch(`${API}/api/po`);
+      const res = await fetch(`${API}/api/po/`);
       const data = await res.json();
       availablePOs.value = data.filter((po: PO) => po.status === "CONFIRMED_BY_STORE" || po.status === "COMPLETED_BY_GUDANG");
     } catch (error) {
@@ -46,7 +46,7 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
   const selectPO = async (poId: string) => {
     isLoading.value = true;
     try {
-      const res = await fetch(`${API}/api/po/${poId}`);
+      const res = await fetch(`${API}/api/po/${poId}/`);
       const data = await res.json();
       currentPO.value = data;
       currentIndex.value = 0;
