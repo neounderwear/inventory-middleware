@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 
-const API = import.meta.env.VITE_API_URL || "https://inventory.underwear.my.id";
+const API = "";
 
 export interface POItem {
   id: string;

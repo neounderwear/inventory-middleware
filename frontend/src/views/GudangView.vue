@@ -207,7 +207,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useFulfillmentStore } from '../stores/fulfillmentStore'
 
-const API = import.meta.env.VITE_API_URL || 'https://inventory.underwear.my.id'
+const API = ''
 const store = useFulfillmentStore()
 const manualQty = ref(0)
 const isSubmitted = ref(false)

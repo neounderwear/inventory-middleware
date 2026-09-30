@@ -9,5 +9,11 @@ export default defineConfig({
     allowedHosts: ["inventory.underwear.my.id"],
     host: true,
     port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      }
+    }
   },
 });

@@ -102,7 +102,7 @@ const loading = ref<boolean>(false)
 const error = ref<string | null>(null)
 const success = ref<string | null>(null)
 
-const API = import.meta.env.VITE_API_URL || 'https://inventory.underwear.my.id'
+const API = ''
 
 const fetchBrands = async () => {
   try {

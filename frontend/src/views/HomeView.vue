@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-const API = import.meta.env.VITE_API_URL || 'https://inventory.underwear.my.id'
+const API = ''
 
 const masterFile = ref<File | null>(null)
 const isUploading = ref(false)
