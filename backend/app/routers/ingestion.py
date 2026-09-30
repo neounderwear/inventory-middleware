@@ -1,0 +1,141 @@
+import pandas as pd
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from typing import Optional
+from sqlalchemy.orm import Session
+from datetime import datetime
+import io
+
+from ..database import get_db
+from ..models import MasterProduct, PurchaseOrder, POItem
+
+router = APIRouter(prefix="/api/po", tags=["PO Ingestion"])
+
+@router.post("/generate-draft")
+async def generate_draft(
+    file_toko: UploadFile = File(...),
+    entitas_toko: str = Form(...),
+    selected_brands: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    if entitas_toko.upper() == "7B":
+        raise HTTPException(status_code=400, detail="7B cannot generate POs.")
+
+    if entitas_toko not in ["JAGOAN", "RJM"]:
+        raise HTTPException(status_code=400, detail="entitas_toko must be 'JAGOAN' or 'RJM'")
+
+    # Process file_toko (Olsera exports use lowercase columns: 'sku', 'stock')
+    try:
+        content_toko = await file_toko.read()
+        df_toko = pd.read_excel(io.BytesIO(content_toko))
+        df_toko.columns = df_toko.columns.str.lower().str.strip()
+        if 'brand' in df_toko.columns:
+            df_toko = df_toko.drop(columns=['brand'])
+        if 'sku' not in df_toko.columns or 'stock' not in df_toko.columns:
+            raise ValueError("Missing required columns: 'sku' or 'stock'")
+        df_toko.dropna(subset=['sku', 'stock'], inplace=True)
+        df_toko.rename(columns={'stock': 'stok_toko'}, inplace=True)
+        df_toko['sku'] = df_toko['sku'].astype(str)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing file_toko: {str(e)}")
+
+    # Fetch master products from DB (including stok_aktual_gudang)
+    master_products = db.query(MasterProduct).all()
+    if not master_products:
+        raise HTTPException(status_code=404, detail="No master products found in database")
+
+    df_master = pd.DataFrame([{
+        'sku': p.sku,
+        'nama_produk': p.nama_produk or '',
+        'brand': p.brand or '',
+        'buffer_jagoan': p.buffer_jagoan,
+        'buffer_rjm': p.buffer_rjm,
+        'stok_aktual_gudang': p.stok_aktual_gudang or 0
+    } for p in master_products])
+
+    # Merge with toko stock
+    df_merged = df_master.merge(df_toko[['sku', 'stok_toko']], on='sku', how='left')
+
+    # After merging, ensure column names are consistent
+    df_merged.columns = df_merged.columns.str.lower().str.strip()
+    
+    if 'brand' in df_merged.columns:
+        df_merged['brand'] = df_merged['brand'].astype(str).str.strip()
+
+    # Fill NaNs in stock with 0
+    df_merged['stok_toko'] = df_merged['stok_toko'].fillna(0)
+
+    # Calculate qty_sistem based on entitas_toko
+    if entitas_toko == "JAGOAN":
+        df_merged['qty_sistem'] = df_merged['buffer_jagoan'] - df_merged['stok_toko']
+    elif entitas_toko == "RJM":
+        df_merged['qty_sistem'] = df_merged['buffer_rjm'] - df_merged['stok_toko']
+
+    # Only order if system suggests a quantity > 0 AND Gudang has actual stock
+    df_filtered = df_merged[(df_merged['qty_sistem'] > 0) & (df_merged['stok_aktual_gudang'] > 0)].copy()
+
+    # Apply optional filters from the frontend
+    if selected_brands:
+        import json
+        try:
+            parsed = json.loads(selected_brands)
+            if not isinstance(parsed, list):
+                parsed = [str(selected_brands)]
+        except json.JSONDecodeError:
+            parsed = selected_brands.split(',')
+            
+        allowed_brands = [str(b).strip().lower() for b in parsed if str(b).strip()]
+        df_filtered = df_filtered[df_filtered['brand'].str.lower().isin(allowed_brands)]
+
+    if df_filtered.empty:
+        raise HTTPException(status_code=400, detail="No items to draft after applying filters.")
+
+    # Generate PO Number: PO-{ENTITAS}-{YYYYMMDD}-{sequence}
+    now = datetime.utcnow()
+    today_str = now.strftime("%Y%m%d")
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    po_count_today = db.query(PurchaseOrder).filter(
+        PurchaseOrder.entitas_toko == entitas_toko,
+        PurchaseOrder.tanggal_dibuat >= today_start
+    ).count()
+    
+    sequence = f"{(po_count_today + 1):03d}"
+    nomor_po = f"PO-{entitas_toko}-{today_str}-{sequence}"
+
+    # Create new DRAFT PurchaseOrder
+    new_po = PurchaseOrder(
+        nomor_po=nomor_po,
+        entitas_toko=entitas_toko,
+        status="DRAFT",
+        tanggal_dibuat=now
+    )
+    db.add(new_po)
+    db.commit()
+    db.refresh(new_po)
+
+    # Sort by brand then product name for logical ordering
+    df_filtered = df_filtered.sort_values(by=['brand', 'nama_produk'], ascending=[True, True])
+
+    # Insert PO Items
+    po_items_to_insert = []
+    for _, row in df_filtered.iterrows():
+        item = POItem(
+            po_id=new_po.id,
+            sku=row['sku'],
+            stok_sisa_toko=int(row['stok_toko']),
+            stok_sisa_gudang=int(row['stok_aktual_gudang']),
+            qty_sistem=int(row['qty_sistem']),
+            qty_request=int(row['qty_sistem']),
+            qty_fulfilled=0
+        )
+        po_items_to_insert.append(item)
+    
+    if po_items_to_insert:
+        db.bulk_save_objects(po_items_to_insert)
+        db.commit()
+
+    return {
+        "po_id": str(new_po.id),
+        "nomor_po": new_po.nomor_po,
+        "item_count": len(po_items_to_insert)
+    }
