@@ -6,7 +6,8 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
-    host: "0.0.0.0", // Agar bisa diakses dari luar Docker
+    allowedHosts: ["inventory.underwear.my.id"],
+    host: true,
     port: 5173,
   },
 });
