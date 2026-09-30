@@ -16,64 +16,6 @@ from ..models import MasterProduct, POItem, PurchaseOrder
 router = APIRouter(prefix="/api/export", tags=["Export"])
 
 
-@router.get("/olsera/{po_id}")
-def export_olsera(po_id: str, db: Session = Depends(get_db)):
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
-    if not po:
-        raise HTTPException(status_code=404, detail="Purchase Order not found")
-
-    if po.status != "COMPLETED_BY_GUDANG":
-        raise HTTPException(
-            status_code=400, detail="PO must be in COMPLETED_BY_GUDANG status"
-        )
-
-    items = db.query(POItem).filter(POItem.po_id == po.id).all()
-
-    pembelian_data = []
-    
-    order_date = po.tanggal_dibuat.strftime("%d/%m/%Y") if po.tanggal_dibuat else datetime.now().strftime("%d/%m/%Y")
-    note_str = f"Terima dari Gudang - {po.nomor_po}"
-
-    for item in items:
-        product = db.query(MasterProduct).filter(MasterProduct.sku == item.sku).first()
-        nama_produk = product.nama_produk if product else "Unknown"
-
-        qty = item.qty_fulfilled
-        if qty <= 0:
-            continue
-
-        pembelian_data.append(
-            {
-                "supplier": "Gudang Utama",
-                "order_date": order_date,
-                "currency": "IDR",
-                "note": note_str,
-                "product_name": nama_produk,
-                "product_variant_name": "",
-                "price": 0,
-                "amount": 0,
-                "qty": qty,
-            }
-        )
-
-    # Generate Pembelian Toko (CSV)
-    df_pembelian = pd.DataFrame(pembelian_data)
-    pembelian_cols = ["supplier", "order_date", "currency", "note", "product_name", "product_variant_name", "price", "amount", "qty"]
-    if df_pembelian.empty:
-        df_pembelian = pd.DataFrame(columns=pembelian_cols)
-    else:
-        df_pembelian = df_pembelian[pembelian_cols]
-
-    csv_bytes = df_pembelian.to_csv(index=False, sep=',').encode('utf-8')
-    
-    return Response(
-        content=csv_bytes,
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="Pembelian_Toko_{po.nomor_po}.csv"'}
-    )
-
-
-@router.post("/update-stock")
 def update_stock(
     file_gudang: UploadFile = File(...),
     entitas: str = Form(...),
@@ -133,9 +75,6 @@ def update_stock(
 
     df_merged["stock"] = df_merged["stock"].fillna(0).astype(int)
 
-    # Permanent "tpl" filter exclusion
-    # Convert 'brand' to string just in case, before lower()
-    df_merged = df_merged[df_merged["brand"].astype(str).str.lower() != "tpl"]
 
     # Apply whitelist brand filter — only include selected brands
     if selected_brands:

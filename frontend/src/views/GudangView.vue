@@ -63,15 +63,21 @@
             {{ po.items?.length || po.item_count || 0 }} ITEMS
           </div>
           <div class="mt-3">
-            <!-- Completed PO: show download button -->
-            <a 
-              v-if="po.status === 'COMPLETED_BY_GUDANG'"
-              :href="`${API}/api/export/olsera/${po.id}`"
-              target="_blank"
-              class="btn-brutal bg-pink-300 w-full text-center flex items-center justify-center no-underline text-black"
-            >
-              📥 DOWNLOAD OLSERA FILES
-            </a>
+            <!-- Completed PO: show download buttons -->
+            <div v-if="po.status === 'COMPLETED_BY_GUDANG'" class="flex flex-col gap-2">
+              <button 
+                @click="downloadCSV(`${API}/api/po/${po.id}/export/penjualan`, `Penjualan_Gudang_${po.nomor_po}.csv`)"
+                class="btn-brutal bg-green-300 w-full text-center flex items-center justify-center text-black"
+              >
+                📥 DOWNLOAD PENJUALAN (CSV)
+              </button>
+              <button 
+                @click="downloadCSV(`${API}/api/po/${po.id}/export/pembelian`, `Pembelian_Toko_${po.nomor_po}.csv`)"
+                class="btn-brutal bg-blue-300 w-full text-center flex items-center justify-center text-black"
+              >
+                📥 DOWNLOAD PEMBELIAN (CSV)
+              </button>
+            </div>
             <!-- Confirmed PO: show process button -->
             <button 
               v-else
@@ -185,13 +191,18 @@
       </button>
 
       <div v-else class="flex flex-col gap-4 mt-4">
-        <a 
-          :href="`${API}/api/export/olsera/${store.currentPO?.id}`"
-          target="_blank"
-          class="btn-brutal bg-pink-300 min-h-16 text-xl text-center flex items-center justify-center no-underline text-black"
+        <button 
+          @click="downloadCSV(`${API}/api/po/${store.currentPO?.id}/export/penjualan`, `Penjualan_Gudang_${store.currentPO?.nomor_po}.csv`)"
+          class="btn-brutal bg-green-300 min-h-16 text-xl text-center flex items-center justify-center text-black"
         >
-          📥 DOWNLOAD OLSERA FILES
-        </a>
+          📥 DOWNLOAD PENJUALAN (CSV)
+        </button>
+        <button 
+          @click="downloadCSV(`${API}/api/po/${store.currentPO?.id}/export/pembelian`, `Pembelian_Toko_${store.currentPO?.nomor_po}.csv`)"
+          class="btn-brutal bg-blue-300 min-h-16 text-xl text-center flex items-center justify-center text-black"
+        >
+          📥 DOWNLOAD PEMBELIAN (CSV)
+        </button>
         <button 
           @click="handleBack" 
           class="btn-brutal bg-white min-h-12 text-lg"
@@ -294,5 +305,23 @@ const handleBack = () => {
   isSubmitted.value = false
   store.reset()
   store.fetchConfirmedPOs()
+}
+
+const downloadCSV = async (url: string, filename: string) => {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('Download failed')
+    const blob = await res.blob()
+    const link = document.createElement('a')
+    link.href = window.URL.createObjectURL(blob)
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(link.href)
+  } catch (err) {
+    console.error(err)
+    alert('Failed to download file')
+  }
 }
 </script>

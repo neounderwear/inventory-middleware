@@ -14,9 +14,11 @@ class MasterProduct(Base):
     brand = Column(String)
     buffer_jagoan = Column(Integer, default=0)
     buffer_rjm = Column(Integer, default=0)
-    # NOTE: New column — run ALTER TABLE master_products ADD COLUMN stok_aktual_gudang INTEGER DEFAULT 0;
-    # or drop/recreate the DB to apply this change.
     stok_aktual_gudang = Column(Integer, default=0)
+    
+    supplier = Column(String)
+    varian = Column(String)
+    harga_beli = Column(Integer, default=0)
 
 class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"

@@ -118,7 +118,11 @@ async def upload_master_products(file: UploadFile = File(...), db: Session = Dep
             'Kategori': 'kategori',
             'Brand': 'brand',
             'Buffer Jagoan': 'buffer_jagoan',
-            'Buffer RJM': 'buffer_rjm'
+            'Buffer RJM': 'buffer_rjm',
+            'Supplier': 'supplier',
+            'Varian': 'varian',
+            'Varian Produk': 'varian',
+            'Harga Beli': 'harga_beli'
         }
         
         rename_dict = {k: v for k, v in col_mapping.items() if k in df.columns}
@@ -143,9 +147,9 @@ async def upload_master_products(file: UploadFile = File(...), db: Session = Dep
                 for k, v in record.items():
                     if hasattr(db_product, k) and k != 'sku':
                         if v is not None:
-                            if k in ['buffer_jagoan', 'buffer_rjm']:
+                            if k in ['buffer_jagoan', 'buffer_rjm', 'harga_beli']:
                                 try:
-                                    v = int(v)
+                                    v = int(float(v))
                                 except ValueError:
                                     v = 0
                             setattr(db_product, k, v)
@@ -154,9 +158,9 @@ async def upload_master_products(file: UploadFile = File(...), db: Session = Dep
                 # Insert new
                 new_data = {}
                 for k, v in record.items():
-                    if k in ['buffer_jagoan', 'buffer_rjm'] and v is not None:
+                    if k in ['buffer_jagoan', 'buffer_rjm', 'harga_beli'] and v is not None:
                         try:
-                            v = int(v)
+                            v = int(float(v))
                         except ValueError:
                             v = 0
                     new_data[k] = v

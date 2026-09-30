@@ -20,8 +20,8 @@ async def generate_draft(
     if entitas_toko.upper() == "7B":
         raise HTTPException(status_code=400, detail="7B cannot generate POs.")
 
-    if entitas_toko not in ["JAGOAN", "RJM"]:
-        raise HTTPException(status_code=400, detail="entitas_toko must be 'JAGOAN' or 'RJM'")
+    if entitas_toko not in ["JAGOAN", "RJM", "GUDANG"]:
+        raise HTTPException(status_code=400, detail="entitas_toko must be 'JAGOAN', 'RJM', or 'GUDANG'")
 
     # Process file_toko (Olsera exports use lowercase columns: 'sku', 'stock')
     try:
@@ -69,6 +69,8 @@ async def generate_draft(
         df_merged['qty_sistem'] = df_merged['buffer_jagoan'] - df_merged['stok_toko']
     elif entitas_toko == "RJM":
         df_merged['qty_sistem'] = df_merged['buffer_rjm'] - df_merged['stok_toko']
+    elif entitas_toko == "GUDANG":
+        df_merged['qty_sistem'] = 0  # Assuming Gudang doesn't use standard PO buffer calculation
 
     # Only order if system suggests a quantity > 0 AND Gudang has actual stock
     df_filtered = df_merged[(df_merged['qty_sistem'] > 0) & (df_merged['stok_aktual_gudang'] > 0)].copy()

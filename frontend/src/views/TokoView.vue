@@ -33,7 +33,11 @@ const fetchBrands = async () => {
   try {
     const res = await fetch(`${API}/api/master/brands`)
     if (res.ok) {
-      availableBrands.value = await res.json()
+      const data = await res.json()
+      if (!data.includes('TPL') && !data.includes('tpl')) {
+        data.push('TPL')
+      }
+      availableBrands.value = data
     }
   } catch (err) {
     console.error('Failed to fetch brands:', err)
@@ -260,6 +264,7 @@ const confirmPo = async () => {
           <label class="font-bold mb-1 uppercase tracking-wider text-sm">Entitas Toko</label>
           <select v-model="entitasToko"
             class="w-full border-[3px] border-black p-3 bg-white font-bold uppercase cursor-pointer appearance-none shadow-[4px_4px_0_0_rgba(0,0,0,1)] focus:outline-none">
+            <option value="GUDANG">GUDANG</option>
             <option value="JAGOAN">JAGOAN</option>
             <option value="RJM">RJM</option>
             <option value="7B">7B</option>

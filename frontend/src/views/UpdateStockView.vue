@@ -108,7 +108,11 @@ const fetchBrands = async () => {
   try {
     const res = await fetch(`${API}/api/master/brands`)
     if (res.ok) {
-      availableBrands.value = await res.json()
+      const data = await res.json()
+      if (!data.includes('TPL') && !data.includes('tpl')) {
+        data.push('TPL')
+      }
+      availableBrands.value = data
     }
   } catch (err) {
     console.error('Failed to fetch brands:', err)

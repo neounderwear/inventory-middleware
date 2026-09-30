@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
+import pandas as pd
+import io
+from fastapi.responses import Response
 from typing import List, Optional
 
 from ..database import get_db
@@ -195,3 +198,92 @@ def fulfill_po(po_id: UUID, request: POFulfillRequest, db: Session = Depends(get
     db.commit()
     
     return {"message": "PO fulfilled and status changed to COMPLETED_BY_GUDANG"}
+
+@router.get("/{po_id}/export/penjualan")
+def export_po_penjualan(po_id: UUID, db: Session = Depends(get_db)):
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found")
+        
+    items = db.query(POItem).filter(POItem.po_id == po_id).all()
+    penjualan_data = []
+    
+    for item in items:
+        product = db.query(MasterProduct).filter(MasterProduct.sku == item.sku).first()
+        nama_produk = product.nama_produk if product else "Unknown"
+        qty = item.qty_fulfilled
+        if qty <= 0:
+            continue
+            
+        penjualan_data.append({
+            "product": nama_produk,
+            "variant": "",
+            "sku": item.sku,
+            "qty": qty,
+            "uom": "",
+        })
+        
+    df = pd.DataFrame(penjualan_data)
+    cols = ["product", "variant", "sku", "qty", "uom"]
+    if df.empty:
+        df = pd.DataFrame(columns=cols)
+    else:
+        df["uom"] = ""
+        df = df[cols]
+        
+    csv_bytes = df.to_csv(index=False, sep=',').encode('utf-8')
+    
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="Penjualan_Gudang_{po.nomor_po}.csv"'}
+    )
+
+@router.get("/{po_id}/export/pembelian")
+def export_po_pembelian(po_id: UUID, db: Session = Depends(get_db)):
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found")
+        
+    items = db.query(POItem).filter(POItem.po_id == po_id).all()
+    pembelian_data = []
+    
+    order_date = (datetime.now() + timedelta(days=1)).strftime('%d/%m/%Y')
+    
+    for item in items:
+        product = db.query(MasterProduct).filter(MasterProduct.sku == item.sku).first()
+        nama_produk = product.nama_produk if product else "Unknown"
+        supplier = product.supplier if product and product.supplier else "Gudang Utama"
+        varian = product.varian if product and product.varian else ""
+        harga_beli = product.harga_beli if product and product.harga_beli else 0
+        
+        qty = item.qty_fulfilled
+        if qty <= 0:
+            continue
+            
+        pembelian_data.append({
+            "supplier": supplier,
+            "order_date": order_date,
+            "currency": "IDR",
+            "note": "",
+            "product_name": nama_produk,
+            "product_variant_name": varian,
+            "price": harga_beli,
+            "amount": "",
+            "qty": qty,
+        })
+        
+    df = pd.DataFrame(pembelian_data)
+    cols = ["supplier", "order_date", "currency", "note", "product_name", "product_variant_name", "price", "amount", "qty"]
+    if df.empty:
+        df = pd.DataFrame(columns=cols)
+    else:
+        df = df[cols]
+        
+    csv_bytes = df.to_csv(index=False, sep=',').encode('utf-8')
+    
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="Pembelian_Toko_{po.nomor_po}.csv"'}
+    )
