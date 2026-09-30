@@ -98,7 +98,7 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
     if (!currentPO.value) return;
     isLoading.value = true;
     try {
-      await fetch(`${API}/api/po/${currentPO.value.id}/fulfill`, {
+      await fetch(`${API}/api/po/${currentPO.value.id}/fulfill/`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
