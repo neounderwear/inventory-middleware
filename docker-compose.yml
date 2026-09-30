@@ -31,7 +31,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://inventory.underwear.my.id
+      - VITE_API_URL=https://inventory.underwear.my.id
 
 volumes:
   postgres_data:
