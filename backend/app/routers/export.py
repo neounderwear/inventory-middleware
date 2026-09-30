@@ -29,8 +29,10 @@ def export_olsera(po_id: str, db: Session = Depends(get_db)):
 
     items = db.query(POItem).filter(POItem.po_id == po.id).all()
 
-    gudang_data = []
-    toko_data = []
+    export_data = []
+    
+    order_date = po.tanggal_dibuat.strftime("%d/%m/%Y") if po.tanggal_dibuat else datetime.now().strftime("%d/%m/%Y")
+    note_str = f"Terima dari Gudang - {po.nomor_po}"
 
     for item in items:
         # Get master product to retrieve Nama Produk
@@ -41,49 +43,41 @@ def export_olsera(po_id: str, db: Session = Depends(get_db)):
         if qty <= 0:
             continue
 
-        gudang_data.append(
+        export_data.append(
             {
-                "SKU": item.sku,
-                "Nama Produk": nama_produk,
-                "Qty": qty,
-                "Notes": f"Transfer ke {po.entitas_toko} - {po.nomor_po}",
+                "supplier": "Gudang Utama",
+                "order_date": order_date,
+                "currency": "IDR",
+                "note": note_str,
+                "product_name": nama_produk,
+                "product_variant_name": "",
+                "price": 0,
+                "amount": 0,
+                "qty": qty,
             }
         )
 
-        toko_data.append(
-            {
-                "SKU": item.sku,
-                "Nama Produk": nama_produk,
-                "Qty": qty,
-                "Notes": f"Terima dari Gudang - {po.nomor_po}",
-            }
-        )
+    df = pd.DataFrame(export_data)
 
-    df_gudang = pd.DataFrame(gudang_data)
-    df_toko = pd.DataFrame(toko_data)
+    columns = ["supplier", "order_date", "currency", "note", "product_name", "product_variant_name", "price", "amount", "qty"]
+    if df.empty:
+        df = pd.DataFrame(columns=columns)
+    else:
+        df = df[columns]
 
-    if df_gudang.empty:
-        df_gudang = pd.DataFrame(columns=["SKU", "Nama Produk", "Qty", "Notes"])
-    if df_toko.empty:
-        df_toko = pd.DataFrame(columns=["SKU", "Nama Produk", "Qty", "Notes"])
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        zip_file.writestr(
-            f"Penjualan_Gudang_{po.nomor_po}.csv", df_gudang.to_csv(index=False)
-        )
-        zip_file.writestr(
-            f"Pembelian_Toko_{po.nomor_po}.csv", df_toko.to_csv(index=False)
-        )
-
-    zip_buffer.seek(0)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Pembelian')
+    output.seek(0)
 
     headers = {
-        "Content-Disposition": f"attachment; filename=export_olsera_{po.nomor_po}.zip"
+        "Content-Disposition": f'attachment; filename="export_olsera_{po.nomor_po}.xlsx"'
     }
 
     return StreamingResponse(
-        zip_buffer, media_type="application/zip", headers=headers
+        output, 
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        headers=headers
     )
 
 
