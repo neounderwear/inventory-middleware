@@ -46,7 +46,7 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
   const selectPO = async (poId: string) => {
     isLoading.value = true;
     try {
-      const res = await fetch(`${API}/api/po/${poId}/`);
+      const res = await fetch(`${API}/api/po/${poId}`);
       const data = await res.json();
       currentPO.value = data;
       currentIndex.value = 0;
