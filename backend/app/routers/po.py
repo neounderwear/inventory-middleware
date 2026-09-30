@@ -279,6 +279,17 @@ def export_po_pembelian(po_id: UUID, db: Session = Depends(get_db)):
         df = pd.DataFrame(columns=cols)
     else:
         df = df[cols]
+
+    def clean_name(row):
+        name = str(row['product_name'])
+        variant = str(row['product_variant_name'])
+        suffix = f" - {variant}"
+        if variant and name.endswith(suffix):
+            return name[:-len(suffix)]
+        return name
+
+    if not df.empty:
+        df['product_name'] = df.apply(clean_name, axis=1)
         
     csv_bytes = df.to_csv(index=False, sep=',').encode('utf-8')
     

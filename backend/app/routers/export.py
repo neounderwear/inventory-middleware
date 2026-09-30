@@ -16,6 +16,7 @@ from ..models import MasterProduct, POItem, PurchaseOrder
 router = APIRouter(prefix="/api/export", tags=["Export"])
 
 
+@router.post("/update-stock/")
 def update_stock(
     file_gudang: UploadFile = File(...),
     entitas: str = Form(...),

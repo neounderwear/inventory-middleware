@@ -136,7 +136,7 @@ const generateUpdateStock = async () => {
   }
 
   try {
-    const res = await fetch(`${API}/api/export/update-stock`, {
+    const res = await fetch(`${API}/api/export/update-stock/`, {
       method: 'POST',
       body: formData
     })
