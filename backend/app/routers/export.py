@@ -5,7 +5,7 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy.orm import Session
@@ -29,7 +29,6 @@ def export_olsera(po_id: str, db: Session = Depends(get_db)):
 
     items = db.query(POItem).filter(POItem.po_id == po.id).all()
 
-    penjualan_data = []
     pembelian_data = []
     
     order_date = po.tanggal_dibuat.strftime("%d/%m/%Y") if po.tanggal_dibuat else datetime.now().strftime("%d/%m/%Y")
@@ -43,18 +42,6 @@ def export_olsera(po_id: str, db: Session = Depends(get_db)):
         if qty <= 0:
             continue
 
-        # Penjualan (CSV)
-        penjualan_data.append(
-            {
-                "product": nama_produk,
-                "variant": "",
-                "sku": item.sku,
-                "qty": qty,
-                "uom": "",
-            }
-        )
-
-        # Pembelian (XLSX)
         pembelian_data.append(
             {
                 "supplier": "Gudang Utama",
@@ -69,20 +56,7 @@ def export_olsera(po_id: str, db: Session = Depends(get_db)):
             }
         )
 
-    # 1. Generate File 1 (Penjualan Gudang - CSV)
-    df_penjualan = pd.DataFrame(penjualan_data)
-    penjualan_cols = ["product", "variant", "sku", "qty", "uom"]
-    if df_penjualan.empty:
-        df_penjualan = pd.DataFrame(columns=penjualan_cols)
-    else:
-        df_penjualan["uom"] = ""
-        df_penjualan = df_penjualan[penjualan_cols]
-        
-    csv_buffer = io.StringIO()
-    df_penjualan.to_csv(csv_buffer, index=False, sep=',')
-    csv_data = csv_buffer.getvalue()
-
-    # 2. Generate File 2 (Pembelian Toko - XLSX)
+    # Generate Pembelian Toko (CSV)
     df_pembelian = pd.DataFrame(pembelian_data)
     pembelian_cols = ["supplier", "order_date", "currency", "note", "product_name", "product_variant_name", "price", "amount", "qty"]
     if df_pembelian.empty:
@@ -90,28 +64,12 @@ def export_olsera(po_id: str, db: Session = Depends(get_db)):
     else:
         df_pembelian = df_pembelian[pembelian_cols]
 
-    excel_buffer = io.BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        df_pembelian.to_excel(writer, index=False, sheet_name='Pembelian')
+    csv_bytes = df_pembelian.to_csv(index=False, sep=',').encode('utf-8')
     
-    # 3. Create ZIP Archive in Memory
-    zip_buffer = io.BytesIO()
-    import zipfile
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        zip_file.writestr(f"Penjualan_Gudang_{po.nomor_po}.csv", csv_data)
-        zip_file.writestr(f"Pembelian_Toko_{po.nomor_po}.xlsx", excel_buffer.getvalue())
-    
-    zip_buffer.seek(0)
-
-    # 4. Return the ZIP File
-    headers = {
-        "Content-Disposition": f'attachment; filename="Fulfillment_{po.nomor_po}.zip"'
-    }
-
-    return StreamingResponse(
-        zip_buffer, 
-        media_type="application/zip", 
-        headers=headers
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="Pembelian_Toko_{po.nomor_po}.csv"'}
     )
 
 
