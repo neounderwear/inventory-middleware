@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { formatWIB, fetchTimestamps, type SyncTimestamps } from '../utils/api'
 
 const API = ''
 
@@ -7,6 +8,13 @@ const masterFile = ref<File | null>(null)
 const isUploading = ref(false)
 const uploadMessage = ref('')
 const isSuccess = ref(false)
+const timestamps = ref<SyncTimestamps | null>(null)
+
+const loadTimestamps = async () => {
+  timestamps.value = await fetchTimestamps()
+}
+
+onMounted(loadTimestamps)
 
 const handleFile = (e: Event) => {
   const target = e.target as HTMLInputElement
@@ -42,7 +50,8 @@ const uploadMasterData = async () => {
 
     const data = await res.json()
     isSuccess.value = true
-    uploadMessage.value = `${data.message} (${data.records_inserted} items updated successfully)`
+    uploadMessage.value = `${data.message} (Inserted: ${data.inserted ?? 0}, Updated: ${data.updated ?? 0})`
+    await loadTimestamps()
   } catch (err: any) {
     isSuccess.value = false
     uploadMessage.value = err.message || 'An error occurred during upload'
@@ -81,6 +90,7 @@ const uploadMasterData = async () => {
     <section class="card-brutal bg-gray-50 border-[3px] border-black p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
       <h2 class="text-3xl font-black mb-4 uppercase">⚙️ Master Data Management</h2>
       <p class="font-semibold mb-6">Upload <span class="bg-black text-white px-1">master_data_v2.xlsx</span> untuk memperbarui database SKU, Nama Produk, Kategori, Brand, dan Buffer Stock.</p>
+      <p class="text-sm font-mono mb-4 bg-black text-white px-2 py-1 inline-block">Last Updated: {{ formatWIB(timestamps?.last_master_sync) }}</p>
       
       <div class="flex flex-col md:flex-row gap-4 items-start md:items-end">
         <div class="flex flex-col flex-1 w-full">

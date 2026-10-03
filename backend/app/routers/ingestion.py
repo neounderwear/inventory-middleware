@@ -10,11 +10,14 @@ from ..models import MasterProduct, PurchaseOrder, POItem
 
 router = APIRouter(prefix="/api/po", tags=["PO Ingestion"])
 
+TUJUAN_PO_OPTIONS = ["CV GPD", "CV RJM", "7B"]
+
 @router.post("/generate-draft")
 async def generate_draft(
     file_toko: UploadFile = File(...),
     entitas_toko: str = Form(...),
     selected_brands: Optional[str] = Form(None),
+    tujuan_po: str = Form("CV GPD"),
     db: Session = Depends(get_db)
 ):
     if entitas_toko.upper() == "7B":
@@ -22,6 +25,10 @@ async def generate_draft(
 
     if entitas_toko not in ["JAGOAN", "RJM", "GUDANG"]:
         raise HTTPException(status_code=400, detail="entitas_toko must be 'JAGOAN', 'RJM', or 'GUDANG'")
+
+    tujuan_po = (tujuan_po or "").strip().upper()
+    if tujuan_po not in TUJUAN_PO_OPTIONS:
+        raise HTTPException(status_code=400, detail=f"tujuan_po must be one of: {', '.join(TUJUAN_PO_OPTIONS)}")
 
     # Process file_toko (Olsera exports use lowercase columns: 'sku', 'stock')
     try:
@@ -108,6 +115,7 @@ async def generate_draft(
     new_po = PurchaseOrder(
         nomor_po=nomor_po,
         entitas_toko=entitas_toko,
+        tujuan_po=tujuan_po,
         status="DRAFT",
         tanggal_dibuat=now
     )
@@ -139,5 +147,6 @@ async def generate_draft(
     return {
         "po_id": str(new_po.id),
         "nomor_po": new_po.nomor_po,
+        "tujuan_po": new_po.tujuan_po,
         "item_count": len(po_items_to_insert)
     }

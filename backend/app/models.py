@@ -26,11 +26,21 @@ class PurchaseOrder(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nomor_po = Column(String, unique=True, index=True)
     entitas_toko = Column(String, nullable=False) # 'JAGOAN' atau 'RJM'
+    tujuan_po = Column(String, default="CV GPD") # 'CV GPD', 'CV RJM', '7B'
     tanggal_dibuat = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default="DRAFT") # DRAFT, CONFIRMED_BY_STORE, COMPLETED_BY_GUDANG
     
     items = relationship("POItem", back_populates="po")
+
+
+class SystemMetadata(Base):
+    """Simple key/value store for system sync timestamps
+    (last_master_sync, last_gpd_sync, last_rjm_sync, last_7b_sync)."""
+    __tablename__ = "system_metadata"
+
+    key = Column(String, primary_key=True)
+    updated_at = Column(DateTime, nullable=True)
 
 class POItem(Base):
     __tablename__ = "po_items"

@@ -5,6 +5,7 @@ const API = ''
 
 const fileToko = ref<File | null>(null)
 const entitasToko = ref<string>('JAGOAN')
+const tujuanPo = ref<string>('CV GPD')
 
 // Filter controls
 const hideZeroStock = ref(false)
@@ -93,6 +94,7 @@ const generateDraft = async () => {
   const formData = new FormData()
   formData.append('file_toko', fileToko.value)
   formData.append('entitas_toko', entitasToko.value)
+  formData.append('tujuan_po', tujuanPo.value)
   if (selectedBrands.value.length > 0) {
     formData.append('selected_brands', selectedBrands.value.join(','))
   }
@@ -271,6 +273,16 @@ const confirmPo = async () => {
           </select>
         </div>
 
+        <div v-if="entitasToko !== '7B'" class="flex flex-col">
+          <label class="font-bold mb-1 uppercase tracking-wider text-sm">Tujuan PO</label>
+          <select v-model="tujuanPo"
+            class="w-full border-[3px] border-black p-3 bg-white font-bold uppercase cursor-pointer appearance-none shadow-[4px_4px_0_0_rgba(0,0,0,1)] focus:outline-none">
+            <option value="CV GPD">CV GPD</option>
+            <option value="CV RJM">CV RJM</option>
+            <option value="7B">7B</option>
+          </select>
+        </div>
+
         <!-- Filters Section -->
         <div class="border-black border-[3px] p-4 bg-gray-50 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
           <h3 class="font-black text-sm uppercase tracking-wider mb-3">Filters</h3>
@@ -330,7 +342,7 @@ const confirmPo = async () => {
         <div v-for="po in draftPOs" :key="po.id" class="border-[3px] border-black p-4 bg-yellow-100 flex justify-between items-center cursor-pointer shadow-[4px_4px_0_0_rgba(0,0,0,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all" @click="resumePo(po.id)">
           <div>
             <div class="font-black text-xl">{{ po.nomor_po }}</div>
-            <div class="text-sm font-bold">{{ po.entitas_toko }} - <span :class="po.status === 'DRAFT' ? 'text-red-600' : 'text-green-600'">{{ po.status }}</span></div>
+            <div class="text-sm font-bold">{{ po.entitas_toko }} → {{ po.tujuan_po || 'CV GPD' }} - <span :class="po.status === 'DRAFT' ? 'text-red-600' : 'text-green-600'">{{ po.status }}</span></div>
             <div class="text-xs font-bold mt-1 bg-black text-white px-1 inline-block">{{ po.item_count }} Items</div>
           </div>
           <div class="text-2xl font-black">▶</div>

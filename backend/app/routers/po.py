@@ -20,6 +20,7 @@ class POListResponse(BaseModel):
     id: UUID
     nomor_po: str
     entitas_toko: str
+    tujuan_po: Optional[str] = None
     tanggal_dibuat: datetime
     status: str
     item_count: int
@@ -31,6 +32,7 @@ class POItemDetail(BaseModel):
     id: UUID
     sku: str
     nama_produk: str
+    brand: Optional[str] = None
     stok_sisa_toko: int
     stok_sisa_gudang: int
     qty_sistem: int
@@ -41,6 +43,7 @@ class PODetailResponse(BaseModel):
     id: UUID
     nomor_po: str
     entitas_toko: str
+    tujuan_po: Optional[str] = None
     tanggal_dibuat: datetime
     status: str
     items: List[POItemDetail]
@@ -59,6 +62,12 @@ class POItemFulfillRequest(BaseModel):
 class POFulfillRequest(BaseModel):
     items: List[POItemFulfillRequest]
 
+
+def _export_filename(prefix: str, po: PurchaseOrder, ext: str) -> str:
+    """Build e.g. Penjualan_Gudang_CV_GPD_PO-JAGOAN-20261003-001.csv"""
+    tujuan = (po.tujuan_po or "CV GPD").strip().replace(" ", "_")
+    return f"{prefix}_{tujuan}_{po.nomor_po}.{ext}"
+
 # --- Endpoints ---
 
 @router.get("/", response_model=List[POListResponse])
@@ -67,6 +76,7 @@ def list_pos(db: Session = Depends(get_db)):
         PurchaseOrder.id,
         PurchaseOrder.nomor_po,
         PurchaseOrder.entitas_toko,
+        PurchaseOrder.tujuan_po,
         PurchaseOrder.tanggal_dibuat,
         PurchaseOrder.status,
         func.count(POItem.id).label("item_count")
@@ -78,6 +88,7 @@ def list_pos(db: Session = Depends(get_db)):
             id=po.id,
             nomor_po=po.nomor_po,
             entitas_toko=po.entitas_toko,
+            tujuan_po=po.tujuan_po,
             tanggal_dibuat=po.tanggal_dibuat,
             status=po.status,
             item_count=po.item_count
@@ -90,27 +101,38 @@ def get_po_details(po_id: UUID, db: Session = Depends(get_db)):
     if not po:
         raise HTTPException(status_code=404, detail="Purchase Order not found")
     
-    items_query = db.query(POItem, MasterProduct.nama_produk)\
+    items_query = db.query(POItem, MasterProduct.nama_produk, MasterProduct.brand)\
                     .outerjoin(MasterProduct, POItem.sku == MasterProduct.sku)\
                     .filter(POItem.po_id == po_id).all()
     
     item_details = []
-    for item, nama_produk in items_query:
+    for item, nama_produk, brand in items_query:
         item_details.append(POItemDetail(
             id=item.id,
             sku=item.sku,
             nama_produk=nama_produk if nama_produk else "Unknown",
+            brand=brand,
             stok_sisa_toko=item.stok_sisa_toko,
             stok_sisa_gudang=item.stok_sisa_gudang,
             qty_sistem=item.qty_sistem,
             qty_request=item.qty_request,
             qty_fulfilled=item.qty_fulfilled
         ))
+
+    # Strict alphabetical sort by brand (case-insensitive), then product name, then SKU.
+    # Items without a brand go last.
+    item_details.sort(key=lambda i: (
+        (i.brand or "").strip() == "",
+        (i.brand or "").strip().lower(),
+        i.nama_produk.lower(),
+        i.sku,
+    ))
         
     return PODetailResponse(
         id=po.id,
         nomor_po=po.nomor_po,
         entitas_toko=po.entitas_toko,
+        tujuan_po=po.tujuan_po,
         tanggal_dibuat=po.tanggal_dibuat,
         status=po.status,
         items=item_details
@@ -236,7 +258,7 @@ def export_po_penjualan(po_id: UUID, db: Session = Depends(get_db)):
     return Response(
         content=csv_bytes,
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="Penjualan_Gudang_{po.nomor_po}.csv"'}
+        headers={"Content-Disposition": 'attachment; filename="' + _export_filename("Penjualan_Gudang", po, "csv") + '"'}
     )
 
 @router.get("/{po_id}/export/pembelian")
@@ -296,5 +318,5 @@ def export_po_pembelian(po_id: UUID, db: Session = Depends(get_db)):
     return Response(
         content=csv_bytes,
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="Pembelian_Toko_{po.nomor_po}.csv"'}
+        headers={"Content-Disposition": 'attachment; filename="' + _export_filename("Pembelian_Toko", po, "csv") + '"'}
     )

@@ -1,9 +1,25 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from .database import engine, Base
-from .routers import master, ingestion, po, export
+from .routers import master, ingestion, po, export, metadata
 
 Base.metadata.create_all(bind=engine)
+
+# Lightweight idempotent migrations: create_all() does not add new columns to
+# existing tables, so add them here (PostgreSQL supports ADD COLUMN IF NOT EXISTS).
+_MIGRATIONS = [
+    "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS tujuan_po VARCHAR DEFAULT 'CV GPD'",
+    "ALTER TABLE master_products ADD COLUMN IF NOT EXISTS supplier VARCHAR",
+    "ALTER TABLE master_products ADD COLUMN IF NOT EXISTS varian VARCHAR",
+    "ALTER TABLE master_products ADD COLUMN IF NOT EXISTS harga_beli INTEGER DEFAULT 0",
+]
+try:
+    with engine.begin() as conn:
+        for stmt in _MIGRATIONS:
+            conn.execute(text(stmt))
+except Exception as e:
+    print(f"Migration warning: {e}")
 
 app = FastAPI(title="Inventory Middleware API")
 
@@ -13,6 +29,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Register routers
@@ -20,6 +37,7 @@ app.include_router(master.router)
 app.include_router(ingestion.router)
 app.include_router(po.router)
 app.include_router(export.router)
+app.include_router(metadata.router)
 
 @app.get("/")
 def read_root():
