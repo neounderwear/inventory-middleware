@@ -252,6 +252,8 @@ def export_po_penjualan(po_id: UUID, db: Session = Depends(get_db)):
     else:
         df["uom"] = ""
         df = df[cols]
+        # Product names start with the brand, so this groups rows by brand
+        df = df.sort_values(by=['product'], ascending=True)
         
     csv_bytes = df.to_csv(index=False, sep=',').encode('utf-8')
     
@@ -312,6 +314,8 @@ def export_po_pembelian(po_id: UUID, db: Session = Depends(get_db)):
 
     if not df.empty:
         df['product_name'] = df.apply(clean_name, axis=1)
+        # Product names start with the brand, so this groups rows by brand
+        df = df.sort_values(by=['product_name'], ascending=True)
         
     csv_bytes = df.to_csv(index=False, sep=',').encode('utf-8')
     
