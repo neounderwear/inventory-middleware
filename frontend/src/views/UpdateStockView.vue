@@ -13,37 +13,22 @@
       {{ success }}
     </div>
 
-    <!-- Section 1: Upload -->
     <div class="card-brutal space-y-4">
-      <h2 class="text-2xl font-bold">1. Upload File Sisa Stok Olsera</h2>
-      <p class="font-medium">Please upload the current stock file export from Olsera (.xlsx)</p>
-
-      <div class="flex flex-col gap-4">
-        <div class="flex flex-col gap-2">
-          <label class="font-bold uppercase tracking-wider text-sm">Pilih Entitas</label>
-          <select v-model="entitas"
-            class="w-full border-[3px] border-black p-3 bg-white font-bold uppercase cursor-pointer appearance-none shadow-[4px_4px_0_0_rgba(0,0,0,1)] focus:outline-none">
-            <option value="GUDANG">Gudang</option>
-            <option value="JAGOAN">Jagoan</option>
-            <option value="RJM">RJM</option>
-            <option value="7B">7B</option>
-          </select>
-        </div>
-
-        <div class="flex flex-col gap-2">
-          <label class="font-bold uppercase tracking-wider text-sm">File Stok (.xlsx)</label>
-          <input type="file" accept=".xlsx" @change="handleFileUpload"
-            class="border-black border-[3px] p-2 bg-white w-full cursor-pointer shadow-[4px_4px_0_0_rgba(0,0,0,1)] focus:outline-none" />
-          <div v-if="file" class="text-green-700 font-bold mt-2">
-            Selected: {{ file.name }}
-          </div>
-        </div>
+      <div class="flex flex-col gap-2">
+        <label class="font-bold uppercase tracking-wider text-sm">Pilih Entitas</label>
+        <select v-model="entitas"
+          class="w-full border-[3px] border-black p-3 bg-white font-bold uppercase cursor-pointer appearance-none shadow-[4px_4px_0_0_rgba(0,0,0,1)] focus:outline-none">
+          <option value="GUDANG">Gudang</option>
+          <option value="JAGOAN">Jagoan</option>
+          <option value="RJM">RJM</option>
+          <option value="7B">7B</option>
+        </select>
       </div>
     </div>
 
     <!-- Section 2: Filter Controls -->
     <div class="card-brutal bg-yellow-100 space-y-4">
-      <h2 class="text-2xl font-bold">2. Filters & Configuration</h2>
+      <h2 class="text-2xl font-bold">Filters & Configuration</h2>
 
       <div class="space-y-4">
         <label class="flex items-center gap-3 cursor-pointer select-none w-max">
@@ -77,9 +62,9 @@
 
     <!-- Section 3: Generate Action -->
     <div class="pt-4">
-      <button @click="generateStockUpdate" :disabled="loading || !file"
+      <button @click="generateStockUpdate" :disabled="loading"
         class="btn-brutal bg-pink-300 w-full py-4 text-2xl flex items-center justify-center gap-2"
-        :class="{ 'opacity-50 cursor-not-allowed': loading || !file }">
+        :class="{ 'opacity-50 cursor-not-allowed': loading }">
         <span v-if="loading">GENERATING...</span>
         <span v-else>GENERATE STOCK UPDATE</span>
       </button>
@@ -90,7 +75,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-const file = ref<File | null>(null)
 const entitas = ref<string>('GUDANG')
 const hideZeroStock = ref<boolean>(true)
 const availableBrands = ref<string[]>([])
@@ -128,36 +112,13 @@ const toggleAllBrands = () => {
   }
 }
 
-const handleFileUpload = (event: Event) => {
-  error.value = null
-  success.value = null
-
-  const target = event.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    const selectedFile = target.files[0]
-    if (!selectedFile.name.endsWith('.xlsx')) {
-      error.value = 'Please upload a valid .xlsx file.'
-      file.value = null
-      target.value = ''
-      return
-    }
-    file.value = selectedFile
-  }
-}
-
 const generateStockUpdate = async () => {
-  if (!file.value) {
-    error.value = 'Please upload a file first.'
-    return
-  }
-
   loading.value = true
   error.value = null
   success.value = null
 
   try {
     const formData = new FormData()
-    formData.append('file_gudang', file.value)
     formData.append('entitas', entitas.value)
     formData.append('hide_zero_stock', hideZeroStock.value.toString())
     if (selectedBrands.value.length > 0) {

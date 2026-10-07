@@ -324,3 +324,22 @@ def export_po_pembelian(po_id: UUID, db: Session = Depends(get_db)):
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="' + _export_filename("Pembelian_Toko", po, "csv") + '"'}
     )
+
+@router.get("/{po_id}/fulfillment-state")
+def get_fulfillment_state(po_id: UUID, db: Session = Depends(get_db)):
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found")
+    return po.fulfillment_state or {}
+
+@router.post("/{po_id}/fulfillment-state")
+def update_fulfillment_state(po_id: UUID, state: dict, db: Session = Depends(get_db)):
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase Order not found")
+    # ensure sqlalchemy detects json modification
+    from sqlalchemy.orm.attributes import flag_modified
+    po.fulfillment_state = state
+    flag_modified(po, "fulfillment_state")
+    db.commit()
+    return {"message": "Fulfillment state updated"}

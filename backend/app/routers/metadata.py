@@ -9,7 +9,7 @@ from ..models import SystemMetadata
 
 router = APIRouter(prefix="/api/metadata", tags=["System Metadata"])
 
-TIMESTAMP_KEYS = ["last_master_sync", "last_gpd_sync", "last_rjm_sync", "last_7b_sync"]
+TIMESTAMP_KEYS = ["last_master_sync", "last_gpd_sync", "last_rjm_sync", "last_7b_sync", "last_jagoan_sync"]
 
 
 def touch_timestamp(db: Session, key: str) -> None:

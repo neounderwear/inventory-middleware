@@ -7,7 +7,7 @@ import pandas as pd
 from io import BytesIO
 
 from ..database import get_db
-from ..models import MasterProduct
+from ..models import MasterProduct, EntityStock
 from .metadata import touch_timestamp
 
 router = APIRouter(prefix="/api/master", tags=["Master Products"])
@@ -203,82 +203,51 @@ async def _read_stock_file(upload: UploadFile, label: str) -> dict:
     return dict(zip(df['sku'], df['stock']))
 
 
-def _apply_brand_override(db: Session, stock_updates: dict, override_stock: dict, target_brands: List[str]) -> int:
-    """Override stock_updates with override_stock for every SKU whose brand is in target_brands.
-    SKUs of those brands missing from the override file are set to 0. Returns number of overridden SKUs."""
-    if not target_brands:
-        return 0
-    brands_lower = [b.strip().lower() for b in target_brands]
-    exclusive_products = db.query(MasterProduct).filter(
-        func.lower(func.trim(MasterProduct.brand)).in_(brands_lower)
-    ).all()
-    for prod in exclusive_products:
-        stock_updates[prod.sku] = override_stock.get(prod.sku, 0)
-    return len(exclusive_products)
 
+from ..models import EntityStock
 
-@router.post("/sync-gudang-stock")
-async def sync_gudang_stock(
-    file: UploadFile = File(...), 
-    file_rjm: Optional[UploadFile] = File(None),
-    file_7b: Optional[UploadFile] = File(None),
+@router.post("/sync-stock/{entity}")
+async def sync_entity_stock(
+    entity: str,
+    file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Sync warehouse stock from Olsera export file (sisa_stok_gpd.xlsx), 
-    with optional overrides for brands exclusive to RJM (file_rjm) or 7B (file_7b).
-    """
+    entity = entity.upper()
+    if entity not in ["GPD", "RJM", "7B", "JAGOAN", "GUDANG", "CV GPD", "CV RJM"]:
+        raise HTTPException(status_code=400, detail="Invalid entity")
+    if entity == "GUDANG" or entity == "CV GPD":
+        entity = "GPD"  # alias
+    if entity == "CV RJM":
+        entity = "RJM"
+
     try:
-        # 1. Process main GPD file
-        stock_updates = await _read_stock_file(file, "Main (GPD)")
-        warnings: List[str] = []
-        overridden_rjm = 0
-        overridden_7b = 0
-
-        # 2. RJM override (exclusive brands)
-        if file_rjm:
-            rjm_stock = await _read_stock_file(file_rjm, "RJM")
-            overridden_rjm = _apply_brand_override(db, stock_updates, rjm_stock, TARGET_BRANDS_RJM)
-
-        # 3. 7B override (exclusive brands)
-        if file_7b:
-            stock_7b = await _read_stock_file(file_7b, "7B")
-            if not TARGET_BRANDS_7B:
-                warnings.append("File 7B diterima, tetapi daftar brand eksklusif 7B (TARGET_BRANDS_7B) masih kosong — tidak ada override.")
-            overridden_7b = _apply_brand_override(db, stock_updates, stock_7b, TARGET_BRANDS_7B)
-
-        # 4. Update Database
-        all_products = db.query(MasterProduct).all()
-        updated = 0
-        not_found = 0
+        stock_updates = await _read_stock_file(file, entity)
         
-        for prod in all_products:
-            if prod.sku in stock_updates:
-                prod.stok_aktual_gudang = stock_updates[prod.sku]
-                updated += 1
-            else:
-                prod.stok_aktual_gudang = 0
-                not_found += 1
+        # Fetch valid SKUs from master_products
+        valid_skus_query = db.query(MasterProduct.sku).all()
+        valid_skus = {row[0] for row in valid_skus_query}
 
-        # 5. Record sync timestamps
-        touch_timestamp(db, "last_gpd_sync")
-        if file_rjm:
-            touch_timestamp(db, "last_rjm_sync")
-        if file_7b:
-            touch_timestamp(db, "last_7b_sync")
-                
+        # Filter incoming stock updates to only those existing in master
+        stock_updates = {sku: stock for sku, stock in stock_updates.items() if sku in valid_skus}
+        
+        # Delete existing records for this entity to prevent duplicate/append
+        db.query(EntityStock).filter(EntityStock.entity == entity).delete()
+
+        # Insert new records
+        new_stocks = []
+        for sku, stock in stock_updates.items():
+            new_stocks.append(EntityStock(entity=entity, sku=sku, stock=stock))
+        
+        db.bulk_save_objects(new_stocks)
+
+        # Update timestamp
+        touch_timestamp(db, f"last_{entity.lower()}_sync")
         db.commit()
-        
+
         return {
-            "message": "Warehouse stock synced successfully",
-            "updated": updated,
-            "not_found": not_found,
-            "overridden_rjm": overridden_rjm,
-            "overridden_7b": overridden_7b,
-            "warnings": warnings,
+            "message": f"{entity} stock synced successfully",
+            "inserted": len(new_stocks),
         }
-    except HTTPException:
-        db.rollback()
-        raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=f"Error syncing warehouse stock: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error syncing stock: {str(e)}")

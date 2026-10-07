@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 
 const API = ''
 
-const fileToko = ref<File | null>(null)
+// removed fileToko
 const entitasToko = ref<string>('JAGOAN')
 const tujuanPo = ref<string>('CV GPD')
 
@@ -13,7 +13,7 @@ const availableBrands = ref<string[]>([])
 const selectedBrands = ref<string[]>([])
 
 const isGenerating = ref(false)
-const isGeneratingStock = ref(false)
+// const isGeneratingStock = ref(false)
 const generateError = ref('')
 
 const poData = ref<any>(null)
@@ -75,24 +75,13 @@ const toggleAllBrands = () => {
   }
 }
 
-const handleFileToko = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  if (target.files) {
-    fileToko.value = target.files[0]
-  }
-}
+
 
 const generateDraft = async () => {
-  if (!fileToko.value) {
-    generateError.value = 'Please select the store stock file.'
-    return
-  }
-
   isGenerating.value = true
   generateError.value = ''
 
   const formData = new FormData()
-  formData.append('file_toko', fileToko.value)
   formData.append('entitas_toko', entitasToko.value)
   formData.append('tujuan_po', tujuanPo.value)
   if (selectedBrands.value.length > 0) {
@@ -117,55 +106,6 @@ const generateDraft = async () => {
     generateError.value = err.message || 'An error occurred'
   } finally {
     isGenerating.value = false
-  }
-}
-
-const generateUpdateStock = async () => {
-  if (!fileToko.value) {
-    generateError.value = 'Please select the store stock file.'
-    return
-  }
-
-  isGeneratingStock.value = true
-  generateError.value = ''
-
-  const formData = new FormData()
-  formData.append('file_gudang', fileToko.value)
-  formData.append('entitas', entitasToko.value)
-  formData.append('hide_zero_stock', String(hideZeroStock.value))
-  if (selectedBrands.value.length > 0) {
-    formData.append('selected_brands', selectedBrands.value.join(','))
-  }
-
-  try {
-    const res = await fetch(`${API}/api/export/update-stock/`, {
-      method: 'POST',
-      body: formData
-    })
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => null)
-      throw new Error(errData?.detail || `Failed to generate update stock: ${res.statusText}`)
-    }
-
-    // Download the file
-    const blob = await res.blob()
-    const contentDisposition = res.headers.get('Content-Disposition') || ''
-    const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/i)
-    const filename = filenameMatch ? filenameMatch[1] : 'update_stock.xlsx'
-
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    window.URL.revokeObjectURL(url)
-  } catch (err: any) {
-    generateError.value = err.message || 'An error occurred'
-  } finally {
-    isGeneratingStock.value = false
   }
 }
 
@@ -257,10 +197,7 @@ const confirmPo = async () => {
       <h2 class="text-2xl font-black mb-6 uppercase">Upload & Actions</h2>
 
       <div class="space-y-4">
-        <div class="flex flex-col">
-          <label class="font-bold mb-1 uppercase tracking-wider text-sm">File Stok Toko (.xlsx)</label>
-          <input type="file" accept=".xlsx" @change="handleFileToko" class="border-black border-[3px] p-2 bg-white" />
-        </div>
+
 
         <div class="flex flex-col">
           <label class="font-bold mb-1 uppercase tracking-wider text-sm">Entitas Toko</label>
@@ -326,9 +263,6 @@ const confirmPo = async () => {
         <div class="flex gap-4 mt-4">
           <button v-if="entitasToko !== '7B'" @click="generateDraft" :disabled="isGenerating" class="btn-brutal bg-yellow-300 flex-1">
             {{ isGenerating ? 'GENERATING...' : 'GENERATE DRAFT PO' }}
-          </button>
-          <button @click="generateUpdateStock" :disabled="isGeneratingStock" class="btn-brutal bg-lime-300 flex-1">
-            {{ isGeneratingStock ? 'GENERATING...' : 'GENERATE UPDATE STOCK' }}
           </button>
         </div>
       </div>

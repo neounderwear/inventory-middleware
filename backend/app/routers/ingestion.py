@@ -6,7 +6,7 @@ from datetime import datetime
 import io
 
 from ..database import get_db
-from ..models import MasterProduct, PurchaseOrder, POItem
+from ..models import MasterProduct, PurchaseOrder, POItem, EntityStock
 
 router = APIRouter(prefix="/api/po", tags=["PO Ingestion"])
 
@@ -14,7 +14,6 @@ TUJUAN_PO_OPTIONS = ["CV GPD", "CV RJM", "7B"]
 
 @router.post("/generate-draft")
 async def generate_draft(
-    file_toko: UploadFile = File(...),
     entitas_toko: str = Form(...),
     selected_brands: Optional[str] = Form(None),
     tujuan_po: str = Form("CV GPD"),
@@ -30,25 +29,25 @@ async def generate_draft(
     if tujuan_po not in TUJUAN_PO_OPTIONS:
         raise HTTPException(status_code=400, detail=f"tujuan_po must be one of: {', '.join(TUJUAN_PO_OPTIONS)}")
 
-    # Process file_toko (Olsera exports use lowercase columns: 'sku', 'stock')
-    try:
-        content_toko = await file_toko.read()
-        df_toko = pd.read_excel(io.BytesIO(content_toko))
-        df_toko.columns = df_toko.columns.str.lower().str.strip()
-        if 'brand' in df_toko.columns:
-            df_toko = df_toko.drop(columns=['brand'])
-        if 'sku' not in df_toko.columns or 'stock' not in df_toko.columns:
-            raise ValueError("Missing required columns: 'sku' or 'stock'")
-        df_toko.dropna(subset=['sku', 'stock'], inplace=True)
-        df_toko.rename(columns={'stock': 'stok_toko'}, inplace=True)
-        df_toko['sku'] = df_toko['sku'].astype(str)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error processing file_toko: {str(e)}")
+    # Fetch toko stock from DB
+    toko_entity = "GPD" if entitas_toko == "GUDANG" else entitas_toko
+    toko_stocks = db.query(EntityStock).filter(EntityStock.entity == toko_entity).all()
+    
+    df_toko = pd.DataFrame([{'sku': str(s.sku), 'stok_toko': s.stock} for s in toko_stocks])
+    if df_toko.empty:
+        df_toko = pd.DataFrame(columns=['sku', 'stok_toko'])
 
-    # Fetch master products from DB (including stok_aktual_gudang)
+
+    # Fetch master products
     master_products = db.query(MasterProduct).all()
     if not master_products:
         raise HTTPException(status_code=404, detail="No master products found in database")
+
+    # Fetch destination stock
+    target_entity_map = {"CV GPD": "GPD", "CV RJM": "RJM", "7B": "7B"}
+    target_entity = target_entity_map.get(tujuan_po, "GPD")
+    dest_stocks = db.query(EntityStock).filter(EntityStock.entity == target_entity).all()
+    stock_map = {s.sku: s.stock for s in dest_stocks}
 
     df_master = pd.DataFrame([{
         'sku': p.sku,
@@ -56,7 +55,7 @@ async def generate_draft(
         'brand': p.brand or '',
         'buffer_jagoan': p.buffer_jagoan,
         'buffer_rjm': p.buffer_rjm,
-        'stok_aktual_gudang': p.stok_aktual_gudang or 0
+        'stok_tujuan': stock_map.get(p.sku, 0)
     } for p in master_products])
 
     # Merge with toko stock
@@ -80,7 +79,7 @@ async def generate_draft(
         df_merged['qty_sistem'] = 0  # Assuming Gudang doesn't use standard PO buffer calculation
 
     # Only order if system suggests a quantity > 0 AND Gudang has actual stock
-    df_filtered = df_merged[(df_merged['qty_sistem'] > 0) & (df_merged['stok_aktual_gudang'] > 0)].copy()
+    df_filtered = df_merged[(df_merged['qty_sistem'] > 0) & (df_merged['stok_tujuan'] > 0)].copy()
 
     # Apply optional filters from the frontend
     if selected_brands:
@@ -133,7 +132,7 @@ async def generate_draft(
             po_id=new_po.id,
             sku=row['sku'],
             stok_sisa_toko=int(row['stok_toko']),
-            stok_sisa_gudang=int(row['stok_aktual_gudang']),
+            stok_sisa_gudang=int(row['stok_tujuan']),
             qty_sistem=int(row['qty_sistem']),
             qty_request=int(row['qty_sistem']),
             qty_fulfilled=0

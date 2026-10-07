@@ -5,6 +5,7 @@ export type SyncTimestamps = {
   last_gpd_sync: string | null;
   last_rjm_sync: string | null;
   last_7b_sync: string | null;
+  last_jagoan_sync: string | null;
 };
 
 /** Format an ISO timestamp as e.g. "03 Oct 2026, 14:30 WIB" (Asia/Jakarta). */

@@ -11,14 +11,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import MasterProduct, POItem, PurchaseOrder
+from ..models import MasterProduct, POItem, PurchaseOrder, EntityStock
 
 router = APIRouter(prefix="/api/export", tags=["Export"])
 
 
 @router.post("/update-stock/")
 def update_stock(
-    file_gudang: UploadFile = File(...),
     entitas: str = Form(...),
     selected_brands: Optional[str] = Form(None),
     hide_zero_stock: bool = Form(True),
@@ -27,23 +26,17 @@ def update_stock(
     if entitas not in ["GUDANG", "JAGOAN", "RJM", "7B"]:
         raise HTTPException(status_code=400, detail="Invalid entitas. Must be GUDANG, JAGOAN, RJM, or 7B.")
 
-    try:
-        contents = file_gudang.file.read()
-        df_stock = pd.read_excel(io.BytesIO(contents))
-    except Exception as e:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid Excel file or format: {str(e)}"
-        )
+    target_entity = "GPD" if entitas == "GUDANG" else entitas
+    dest_stocks = db.query(EntityStock).filter(EntityStock.entity == target_entity).all()
+    stock_map = {s.sku: s.stock for s in dest_stocks}
 
-    # Use the exact raw Olsera lowercase columns
-    required_columns = ['product', 'sku', 'variant', 'stock', 'brand']
-    for col in required_columns:
-        if col not in df_stock.columns:
-            raise HTTPException(
-                status_code=400, detail=f"Excel file must contain '{col}' column"
-            )
-
-    df_stock = df_stock.dropna(subset=["sku"])
+    stock_records = []
+    for sku, stock in stock_map.items():
+        stock_records.append({'sku': sku, 'stock': stock})
+    
+    df_stock = pd.DataFrame(stock_records)
+    if df_stock.empty:
+        df_stock = pd.DataFrame(columns=['sku', 'stock'])
 
     products = (
         db.query(MasterProduct).all()
@@ -51,19 +44,20 @@ def update_stock(
 
     product_data = []
     for p in products:
-        product_data.append(
-            {
-                "sku": p.sku,
-            }
-        )
+        product_data.append({
+            "sku": p.sku,
+            "product": p.nama_produk,
+            "brand": p.brand,
+            "variant": p.varian,
+        })
 
     df_products = pd.DataFrame(product_data)
-
     if df_products.empty:
-        df_products = pd.DataFrame(columns=["sku"])
+        df_products = pd.DataFrame(columns=["sku", "product", "brand", "variant"])
 
     # Merge master products with stock data
     # We only want items that are present in master_products
+    required_columns = ["sku", "stock"]
     df_merged = pd.merge(
         df_products, df_stock[required_columns], on="sku", how="inner"
     )
@@ -105,10 +99,7 @@ def update_stock(
     # Reorder columns to match reference
     df_merged = df_merged[["Produk", "SKU", "Varian", "Stok", "Brand"]]
 
-    # Apply Title Case to product names
-    df_merged["Produk"] = df_merged["Produk"].apply(
-        lambda x: str(x).title() if pd.notnull(x) else x
-    )
+
 
     # Sort alphabetically by Brand then Produk for readability
     df_merged = df_merged.sort_values(by=['Brand', 'Produk'], ascending=[True, True])

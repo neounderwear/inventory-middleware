@@ -26,32 +26,14 @@ export interface PO {
   items: POItem[];
 }
 
-/** Shape persisted to localStorage for one in-progress PO. */
 interface SavedProgress {
   poId: string;
-  qty: Record<string, number>; // itemId -> qty_fulfilled
-  queue: string[]; // pending item ids, in processing order (front = current)
-  doneIds: string[]; // processed item ids
-  skippedIds: string[]; // item ids that were skipped at least once and are still pending
+  qty: Record<string, number>;
+  queue: string[];
+  doneIds: string[];
+  skippedIds: string[];
   savedAt: string;
 }
-
-const ACTIVE_KEY = "fulfillment:active";
-const progressKey = (poId: string) => `fulfillment:po:${poId}`;
-
-const loadProgress = (poId: string): SavedProgress | null => {
-  try {
-    const raw = localStorage.getItem(progressKey(poId));
-    return raw ? (JSON.parse(raw) as SavedProgress) : null;
-  } catch {
-    return null;
-  }
-};
-
-const clearProgress = (poId: string) => {
-  localStorage.removeItem(progressKey(poId));
-  if (localStorage.getItem(ACTIVE_KEY) === poId) localStorage.removeItem(ACTIVE_KEY);
-};
 
 export const useFulfillmentStore = defineStore("fulfillment", () => {
   const availablePOs = ref<PO[]>([]);
@@ -62,13 +44,12 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
   const isLoading = ref(false);
   const savedProgressIds = ref<string[]>([]);
 
-  // Read-only recap for COMPLETED_BY_GUDANG POs
   const recapPO = ref<PO | null>(null);
   const isRecapLoading = ref(false);
 
-  // ---------- Persistence ----------
+  let persistTimeout: any = null;
 
-  const persist = () => {
+  const persist = async () => {
     if (!currentPO.value) return;
     const qty: Record<string, number> = {};
     for (const item of currentPO.value.items) qty[item.id] = item.qty_fulfilled;
@@ -80,20 +61,24 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
       skippedIds: skippedIds.value,
       savedAt: new Date().toISOString(),
     };
-    localStorage.setItem(progressKey(currentPO.value.id), JSON.stringify(state));
-    localStorage.setItem(ACTIVE_KEY, currentPO.value.id);
+
     if (!savedProgressIds.value.includes(currentPO.value.id)) {
       savedProgressIds.value = [...savedProgressIds.value, currentPO.value.id];
     }
-  };
 
-  const refreshSavedProgressIds = () => {
-    savedProgressIds.value = availablePOs.value
-      .filter((po) => po.status === "CONFIRMED_BY_STORE" && loadProgress(po.id))
-      .map((po) => po.id);
+    if (persistTimeout) clearTimeout(persistTimeout);
+    persistTimeout = setTimeout(async () => {
+      try {
+        await fetch(`${API}/api/po/${currentPO.value!.id}/fulfillment-state`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state)
+        });
+      } catch (err) {
+        console.error('Failed to save fulfillment state to DB', err);
+      }
+    }, 500);
   };
-
-  // ---------- Loading ----------
 
   const fetchConfirmedPOs = async () => {
     isLoading.value = true;
@@ -103,11 +88,11 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
       availablePOs.value = data.filter(
         (po: PO) => po.status === "CONFIRMED_BY_STORE" || po.status === "COMPLETED_BY_GUDANG"
       );
-      // Drop stale progress for POs that are no longer pending fulfillment
-      for (const po of availablePOs.value) {
-        if (po.status === "COMPLETED_BY_GUDANG") clearProgress(po.id);
-      }
-      refreshSavedProgressIds();
+      
+      // For each active PO, we could potentially check if there is state in the DB,
+      // but typically we wait until they open it or use another endpoint to check.
+      // Since we don't have a bulk state endpoint, we'll just not show "IN PROGRESS" on the list
+      // unless we know about it from the current session. The user can still open it to resume.
     } catch (error) {
       console.error(error);
     } finally {
@@ -115,7 +100,17 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
     }
   };
 
-  /** Start or resume fulfillment of a CONFIRMED_BY_STORE PO. */
+  const loadProgressFromDB = async (poId: string): Promise<SavedProgress | null> => {
+    try {
+      const res = await fetch(`${API}/api/po/${poId}/fulfillment-state`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.poId ? data : null;
+    } catch {
+      return null;
+    }
+  };
+
   const selectPO = async (poId: string) => {
     isLoading.value = true;
     try {
@@ -124,23 +119,19 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
       const data: PO = await res.json();
 
       if (data.status !== "CONFIRMED_BY_STORE") {
-        // Nothing to scan — drop any stale local state
-        clearProgress(poId);
         return;
       }
 
       const allIds = data.items.map((i) => i.id);
-      const saved = loadProgress(poId);
+      const saved = await loadProgressFromDB(poId);
 
       if (saved) {
-        // Rehydrate: restore quantities, queue, done & skipped lists
         for (const item of data.items) {
           if (saved.qty[item.id] !== undefined) item.qty_fulfilled = saved.qty[item.id];
         }
         const valid = new Set(allIds);
         const done = saved.doneIds.filter((id) => valid.has(id));
         const q = saved.queue.filter((id) => valid.has(id) && !done.includes(id));
-        // Any item not present in saved state (e.g. added later) goes to the end of the queue
         for (const id of allIds) if (!done.includes(id) && !q.includes(id)) q.push(id);
         doneIds.value = done;
         queue.value = q;
@@ -152,7 +143,7 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
       }
 
       currentPO.value = data;
-      persist();
+      // Don't persist on load unless we want to initialize it
     } catch (error) {
       console.error(error);
     } finally {
@@ -160,17 +151,11 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
     }
   };
 
-  /** Resume the last active PO after a reload / navigation. */
   const rehydrate = async () => {
-    if (currentPO.value) return;
-    const activeId = localStorage.getItem(ACTIVE_KEY);
-    if (activeId) await selectPO(activeId);
+    // No localStorage to rehydrate from.
   };
 
-  // ---------- Scanning actions ----------
-
   const itemById = (id: string) => currentPO.value?.items.find((i) => i.id === id) || null;
-
   const currentItem = computed(() => (queue.value.length ? itemById(queue.value[0]) : null));
 
   const completeCurrent = (qty: number) => {
@@ -188,7 +173,6 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
   const markPartial = (qty: number) => completeCurrent(qty);
   const markEmpty = () => completeCurrent(0);
 
-  /** "LEWATI SEMENTARA": move the current item to the back of the queue. */
   const skipCurrent = () => {
     if (queue.value.length < 2) return;
     const [first, ...rest] = queue.value;
@@ -197,7 +181,6 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
     persist();
   };
 
-  /** Bring any item (pending or done) to the front of the queue to (re)process it. */
   const jumpTo = (itemId: string) => {
     if (!itemById(itemId)) return;
     doneIds.value = doneIds.value.filter((id) => id !== itemId);
@@ -223,8 +206,14 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
         const err = await res.json().catch(() => null);
         throw new Error(err?.detail || "Submit failed");
       }
-      // Only now is the local progress for this PO discarded
-      clearProgress(currentPO.value.id);
+      
+      // clear state from db on submit
+      await fetch(`${API}/api/po/${currentPO.value.id}/fulfillment-state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+
       savedProgressIds.value = savedProgressIds.value.filter((id) => id !== currentPO.value!.id);
       currentPO.value.status = "COMPLETED_BY_GUDANG";
     } catch (error) {
@@ -235,16 +224,12 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
     }
   };
 
-  /** Leave the scanner. Progress for the PO stays saved so it can be resumed later. */
   const reset = () => {
-    localStorage.removeItem(ACTIVE_KEY);
     currentPO.value = null;
     queue.value = [];
     doneIds.value = [];
     skippedIds.value = [];
   };
-
-  // ---------- Read-only recap ----------
 
   const openRecap = async (poId: string) => {
     isRecapLoading.value = true;
@@ -263,8 +248,6 @@ export const useFulfillmentStore = defineStore("fulfillment", () => {
   const closeRecap = () => {
     recapPO.value = null;
   };
-
-  // ---------- Derived state ----------
 
   const isCompleted = computed(() => !!currentPO.value && queue.value.length === 0);
   const totalItems = computed(() => currentPO.value?.items.length || 0);

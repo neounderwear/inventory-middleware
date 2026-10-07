@@ -1,58 +1,5 @@
 <template>
   <div class="min-h-screen bg-white p-4 max-w-md mx-auto flex flex-col gap-6">
-    <!-- Sync Warehouse Stock Section -->
-    <div v-if="!store.currentPO" class="flex flex-col gap-4">
-      <div class="card-brutal bg-yellow-100">
-        <h2 class="text-xl font-black mb-3 uppercase tracking-wider">📦 Sync Stok Gudang</h2>
-        <p class="text-sm font-bold mb-3">Upload file stok gudang (sisa_stok_gpd.xlsx) untuk sinkronisasi ke database.</p>
-
-        <p class="text-xs font-bold mb-1 uppercase tracking-wider">FILE STOK GPD (.XLSX) - WAJIB</p>
-        <p class="text-xs font-mono mb-1 bg-black text-white px-1 inline-block">Last Updated: {{ formatWIB(timestamps?.last_gpd_sync) }}</p>
-        <input 
-          type="file" 
-          accept=".xlsx" 
-          @change="handleSyncFile" 
-          class="border-black border-[3px] p-2 bg-white w-full mb-3"
-        />
-        
-        <p class="text-xs font-bold mb-1 uppercase tracking-wider">FILE STOK RJM (.XLSX) - KHUSUS CROCODILE &amp; GTMAN (OPSIONAL)</p>
-        <p class="text-xs font-mono mb-1 bg-black text-white px-1 inline-block">Last Updated: {{ formatWIB(timestamps?.last_rjm_sync) }}</p>
-        <input 
-          type="file" 
-          accept=".xlsx" 
-          @change="handleRjmFile" 
-          class="border-black border-[3px] p-2 bg-white w-full mb-3"
-        />
-
-        <p class="text-xs font-bold mb-1 uppercase tracking-wider">FILE STOK 7B (.XLSX) - EKSKLUSIF (OPSIONAL)</p>
-        <p class="text-xs font-mono mb-1 bg-black text-white px-1 inline-block">Last Updated: {{ formatWIB(timestamps?.last_7b_sync) }}</p>
-        <input 
-          type="file" 
-          accept=".xlsx" 
-          @change="handle7bFile" 
-          class="border-black border-[3px] p-2 bg-white w-full mb-3"
-        />
-
-        <div v-if="syncError" class="bg-pink-300 border-black border-[3px] p-2 font-bold text-sm mb-3">
-          {{ syncError }}
-        </div>
-        <div v-if="syncSuccess" class="bg-green-300 border-black border-[3px] p-2 font-bold text-sm mb-3">
-          {{ syncSuccess }}
-        </div>
-        <div v-for="w in syncWarnings" :key="w" class="bg-yellow-300 border-black border-[3px] p-2 font-bold text-sm mb-3">
-          ⚠️ {{ w }}
-        </div>
-        <button 
-          @click="syncGudangStock" 
-          :disabled="isSyncing || !syncFile"
-          class="btn-brutal bg-cyan-300 w-full"
-          :class="{ 'opacity-50 cursor-not-allowed': isSyncing || !syncFile }"
-        >
-          {{ isSyncing ? 'SYNCING...' : 'SYNC STOCK GUDANG' }}
-        </button>
-      </div>
-    </div>
-
     <!-- State 1: PO Selection -->
     <div v-if="!store.currentPO" class="flex flex-col gap-4">
       <h1 class="text-3xl font-black mb-4 uppercase">🏭 Gudang Fulfillment</h1>
@@ -340,7 +287,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useFulfillmentStore, type PO } from '../stores/fulfillmentStore'
-import { formatWIB, fetchTimestamps, downloadFile, type SyncTimestamps } from '../utils/api'
+import { downloadFile } from '../utils/api'
 
 const API = ''
 const store = useFulfillmentStore()
@@ -348,83 +295,8 @@ const manualQty = ref(0)
 const isSubmitted = ref(false)
 const submitError = ref('')
 const showRecap = ref(false)
-const timestamps = ref<SyncTimestamps | null>(null)
-
-// Sync warehouse stock state
-const syncFile = ref<File | null>(null)
-const fileRjm = ref<File | null>(null)
-const file7b = ref<File | null>(null)
-const isSyncing = ref(false)
-const syncError = ref('')
-const syncSuccess = ref('')
-const syncWarnings = ref<string[]>([])
-
-const loadTimestamps = async () => {
-  timestamps.value = await fetchTimestamps()
-}
-
-const handleSyncFile = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  if (target.files) {
-    syncFile.value = target.files[0]
-    syncError.value = ''
-    syncSuccess.value = ''
-  }
-}
-
-const handleRjmFile = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  if (target.files) {
-    fileRjm.value = target.files[0]
-  }
-}
-
-const handle7bFile = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  if (target.files) {
-    file7b.value = target.files[0]
-  }
-}
-
-const syncGudangStock = async () => {
-  if (!syncFile.value) return
-  
-  isSyncing.value = true
-  syncError.value = ''
-  syncSuccess.value = ''
-  syncWarnings.value = []
-
-  const formData = new FormData()
-  formData.append('file', syncFile.value)
-  if (fileRjm.value) {
-    formData.append('file_rjm', fileRjm.value)
-  }
-  if (file7b.value) {
-    formData.append('file_7b', file7b.value)
-  }
-
-  try {
-    const res = await fetch(`${API}/api/master/sync-gudang-stock`, {
-      method: 'POST',
-      body: formData
-    })
-    if (!res.ok) {
-      const errData = await res.json().catch(() => null)
-      throw new Error(errData?.detail || 'Sync failed')
-    }
-    const data = await res.json()
-    syncSuccess.value = `${data.message} (Updated: ${data.updated}, Not Found: ${data.not_found}, Override RJM: ${data.overridden_rjm ?? 0}, Override 7B: ${data.overridden_7b ?? 0})`
-    syncWarnings.value = data.warnings || []
-    await loadTimestamps()
-  } catch (err: any) {
-    syncError.value = err.message || 'Failed to sync stock'
-  } finally {
-    isSyncing.value = false
-  }
-}
 
 onMounted(async () => {
-  loadTimestamps()
   await store.fetchConfirmedPOs()
   // Resume an in-progress fulfillment after reload / navigation
   await store.rehydrate()

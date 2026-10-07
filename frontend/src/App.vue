@@ -11,9 +11,10 @@ const toggleMobileMenu = () => {
 
 const navLinks = [
   { path: '/', label: 'Home' },
-  { path: '/toko', label: 'Toko' },
-  { path: '/gudang', label: 'Gudang' },
-  { path: '/update-stock', label: 'Update Stock' }
+  { path: '/po', label: 'PO' },
+  { path: '/fullfillment', label: 'Fullfillment' },
+  { path: '/update-stock', label: 'Update Stock' },
+  { path: '/upload', label: 'Upload' }
 ]
 </script>
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -20,6 +20,13 @@ class MasterProduct(Base):
     varian = Column(String)
     harga_beli = Column(Integer, default=0)
 
+class EntityStock(Base):
+    __tablename__ = "entity_stocks"
+    id = Column(Integer, primary_key=True, index=True)
+    sku = Column(String, ForeignKey("master_products.sku"), index=True)
+    entity = Column(String, index=True) # 'GPD', 'RJM', '7B', 'JAGOAN'
+    stock = Column(Integer, default=0)
+
 class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"
     
@@ -30,6 +37,7 @@ class PurchaseOrder(Base):
     tanggal_dibuat = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default="DRAFT") # DRAFT, CONFIRMED_BY_STORE, COMPLETED_BY_GUDANG
+    fulfillment_state = Column(JSON, default=dict)
     
     items = relationship("POItem", back_populates="po")
 
